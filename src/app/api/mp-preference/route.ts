@@ -5,6 +5,8 @@ import { NextResponse } from 'next/server';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 
 const ALLOWED_ORIGINS = [
+  'https://www.cosiararas.com.br',
+  'https://cosiararas.com.br',
   'https://cosiararas.lovable.app',
   'http://localhost:5173',
   'http://localhost:3000',
