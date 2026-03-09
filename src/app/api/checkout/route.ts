@@ -106,6 +106,7 @@ export async function POST(request: Request) {
               currency_id: 'BRL',
             })),
             payer: { name: customerInfo.nome.trim(), phone: { area_code: '', number: customerInfo.telefone.trim() } },
+            notification_url: `${appUrl}/api/mp-webhook`,
             back_urls: {
               success: `${appUrl}/pedido/sucesso?order_id=${orderId}`,
               failure: `${appUrl}/pedido/falha?order_id=${orderId}`,

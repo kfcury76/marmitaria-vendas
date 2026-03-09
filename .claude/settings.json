@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://energetictriggerfish-supabase.cloudfy.live/rest/v1/menu_items?select=id,name,base_price&is_active=eq.true&limit=3\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzcxMjQ3MjE5LCJleHAiOjE4MDI3ODMyMTl9.ptnClNNSMAfgXzL5YkmAjY_Y1NYAOhya1u1Uzoxrolw\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzcxMjQ3MjE5LCJleHAiOjE4MDI3ODMyMTl9.ptnClNNSMAfgXzL5YkmAjY_Y1NYAOhya1u1Uzoxrolw\" -o C:/tmp/active_items.json)",
+      "Bash(curl -s \"https://energetictriggerfish-supabase.cloudfy.live/rest/v1/menu_items?select=id,name,base_price&is_active=eq.true&limit=3\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzcxMjQ3MjE5LCJleHAiOjE4MDI3ODMyMTl9.ptnClNNSMAfgXzL5YkmAjY_Y1NYAOhya1u1Uzoxrolw\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzcxMjQ3MjE5LCJleHAiOjE4MDI3ODMyMTl9.ptnClNNSMAfgXzL5YkmAjY_Y1NYAOhya1u1Uzoxrolw\")",
+      "Bash(curl -s -X POST \"https://marmitariaararas.com.br/api/checkout\" -H \"Content-Type: application/json\" -d '{:*)",
+      "Bash(node -e \":*)",
+      "Bash(curl -s \"https://energetictriggerfish-supabase.cloudfy.live/pg/query\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3NzEyNDcyMTksImV4cCI6MTgwMjc4MzIxOX0.m10wDBnYdyBbETPFzIIqkAvzWTvrz-ioLSZURUltbY0\" -H \"Content-Type: application/json\" -d '{\"\"query\"\":\"\"SELECT column_name FROM information_schema.columns WHERE table_name='\"''\"'marmita_orders'\"''\"' ORDER BY ordinal_position\"\"}')",
+      "Bash(curl -s -X POST \"https://marmitariaararas.com.br/api/checkout\" -H \"Content-Type: application/json\" -d '{\"\"cart\"\":[{\"\"menuItem\"\":{\"\"id\"\":\"\"00000000-0000-4000-a000-00003c8c318f\"\",\"\"name\"\":\"\"Marmita Pequena\"\"},\"\"quantity\"\":1,\"\"selectedAdditions\"\":{}}],\"\"customerInfo\"\":{\"\"nome\"\":\"\"Teste Real\"\",\"\"telefone\"\":\"\"19912345678\"\",\"\"endereco\"\":\"\"Rua Teste 1\"\",\"\"observacoes\"\":\"\"teste de pagamento\"\"}}' -o C:/tmp/order_test.json)",
+      "Bash(node -e \"const d=require\\(''C:/tmp/temp_item.json''\\); console.log\\(JSON.stringify\\(d\\).slice\\(0,300\\)\\);\")",
+      "Bash(SVC=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3NzEyNDcyMTksImV4cCI6MTgwMjc4MzIxOX0.m10wDBnYdyBbETPFzIIqkAvzWTvrz-ioLSZURUltbY0\")",
+      "Bash(OID=\"6cdfc59a-5f02-4c87-8622-f10986644dda\")",
+      "Bash(BASE=\"https://energetictriggerfish-supabase.cloudfy.live/rest/v1\")",
+      "Bash(__NEW_LINE_311ed83d6951f0ca__ echo \"=== marmita_orders ===\")",
+      "Bash(curl -s \"$BASE/marmita_orders?id=eq.$OID&select=id,payment_status,order_status,mp_payment_id,mp_preference_id\" -H \"apikey: $SVC\" -H \"Authorization: Bearer $SVC\")",
+      "Bash(__NEW_LINE_311ed83d6951f0ca__ echo \"=== financial_entries ===\")",
+      "Bash(curl -s \"$BASE/financial_entries?order_id=eq.$OID&select=id,payment_status,total_amount\" -H \"apikey: $SVC\" -H \"Authorization: Bearer $SVC\")",
+      "Bash(__NEW_LINE_311ed83d6951f0ca__ echo \"=== print_queue ===\")",
+      "Bash(curl -s \"$BASE/print_queue?order_id=eq.$OID&select=id,print_status,target\" -H \"apikey: $SVC\" -H \"Authorization: Bearer $SVC\")"
+    ]
+  }
+}
