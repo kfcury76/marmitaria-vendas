@@ -4,12 +4,13 @@ import { useState, useEffect } from "react";
 import { MENU_DATA, MenuItem, MenuAddition, MenuGroup } from "@/data/menu";
 import { getRealMenu } from "@/lib/menu-api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Plus, Minus, ShoppingBag } from "lucide-react";
+import { ShoppingBag, Plus, Trash2 } from 'lucide-react';
+import { cn } from "@/lib/utils";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type CartItem = {
   cartId: string;
@@ -22,9 +23,59 @@ type CartItem = {
 type CustomerInfo = {
   nome: string;
   telefone: string;
-  endereco?: string;
   observacoes: string;
 };
+
+type MarmitaGroup = {
+  baseName: string;
+  description: string;
+  image: string;
+  sizes: { label: string; item: MenuItem }[];
+};
+
+// ─── Grouping Logic ──────────────────────────────────────────────────────────
+
+const SIZE_PREFIXES = [
+  { prefix: 'Marmitex Mini - ', label: 'Mini' },
+  { prefix: 'Marmitex Média - ', label: 'Média' },
+  { prefix: 'Marmitex Grande - ', label: 'Grande' },
+];
+const SIZE_ORDER: Record<string, number> = { Mini: 0, Média: 1, Grande: 2 };
+const ADICIONAL_PREFIXES = ['Extra - ', 'Proteína - ', 'Acompanhamento - '];
+
+function groupMenuItems(items: MenuItem[]) {
+  const marmitaMap = new Map<string, MarmitaGroup>();
+  const adicionais: MenuItem[] = [];
+  const outros: MenuItem[] = [];
+
+  for (const item of items) {
+    const sizeMatch = SIZE_PREFIXES.find(({ prefix }) => item.name.startsWith(prefix));
+    if (sizeMatch) {
+      const baseName = item.name.slice(sizeMatch.prefix.length);
+      if (!marmitaMap.has(baseName)) {
+        marmitaMap.set(baseName, { baseName, description: item.description, image: item.image, sizes: [] });
+      }
+      marmitaMap.get(baseName)!.sizes.push({ label: sizeMatch.label, item });
+      continue;
+    }
+    if (ADICIONAL_PREFIXES.some(p => item.name.startsWith(p)) || item.name === 'Marmita Personalizada') {
+      adicionais.push(item);
+      continue;
+    }
+    outros.push(item);
+  }
+
+  return {
+    marmitaGroups: Array.from(marmitaMap.values()).map(g => ({
+      ...g,
+      sizes: [...g.sizes].sort((a, b) => (SIZE_ORDER[a.label] ?? 9) - (SIZE_ORDER[b.label] ?? 9)),
+    })),
+    adicionais,
+    outros,
+  };
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function Home() {
   const [menuData, setMenuData] = useState<MenuItem[]>(MENU_DATA);
@@ -37,20 +88,45 @@ export default function Home() {
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({ nome: "", telefone: "", observacoes: "" });
   const [checkoutStep, setCheckoutStep] = useState<"cart" | "form">("cart");
 
+  const storeOpen = (() => {
+    const brt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const day = brt.getDay();
+    const totalMin = brt.getHours() * 60 + brt.getMinutes();
+    return day >= 1 && day <= 6 && totalMin >= 660 && totalMin <= 900;
+  })();
+
   useEffect(() => {
     getRealMenu().then(data => {
       if (data.length > 0) setMenuData(data);
     }).finally(() => setMenuLoading(false));
   }, []);
 
-  const categories = Array.from(new Set(menuData.map(item => item.category)))
-    .sort((a, b) => {
-      if (a === "Bebidas") return 1;
-      if (b === "Bebidas") return -1;
-      return a.localeCompare(b);
-    });
+  const { marmitaGroups, adicionais, outros } = groupMenuItems(menuData);
 
-  const handleOpenModal = (item: MenuItem) => {
+  const categorizedOthers = outros.reduce<Record<string, MenuItem[]>>((acc, item) => {
+    if (!acc[item.category]) acc[item.category] = [];
+    acc[item.category].push(item);
+    return acc;
+  }, {});
+
+  // ── Cart actions ────────────────────────────────────────────────────────────
+
+  const addToCart = (item: MenuItem, selections: Record<string, MenuAddition[]> = {}) => {
+    const addPrice = Object.values(selections).flat().reduce((s, a) => s + a.price, 0);
+    setCart(prev => [...prev, {
+      cartId: Math.random().toString(36).substring(2, 11),
+      menuItem: item,
+      selectedAdditions: selections,
+      quantity: 1,
+      totalPrice: item.basePrice + addPrice,
+    }]);
+  };
+
+  const openModal = (item: MenuItem) => {
+    if (item.groups.length === 0) {
+      addToCart(item);
+      return;
+    }
     setSelectedItem(item);
     setCurrentSelections({});
     setModalOpen(true);
@@ -58,121 +134,110 @@ export default function Home() {
 
   const handleToggleAddition = (group: MenuGroup, option: MenuAddition) => {
     setCurrentSelections(prev => {
-      const currentGroupSelections = prev[group.id] || [];
-      const isSelected = currentGroupSelections.some(opt => opt.id === option.id);
-      let nextGroupSelections = [...currentGroupSelections];
-      if (isSelected) {
-        nextGroupSelections = nextGroupSelections.filter(opt => opt.id !== option.id);
-      } else {
-        if (nextGroupSelections.length < group.max) {
-          nextGroupSelections.push(option);
-        } else if (group.max === 1) {
-          nextGroupSelections = [option];
-        }
-      }
-      return { ...prev, [group.id]: nextGroupSelections };
+      const cur = prev[group.id] || [];
+      const selected = cur.some(o => o.id === option.id);
+      let next = selected ? cur.filter(o => o.id !== option.id) : [...cur, option];
+      if (!selected && next.length > group.max) next = group.max === 1 ? [option] : cur;
+      return { ...prev, [group.id]: next };
     });
-  };
-
-  const calculateItemTotal = (item: MenuItem, selections: Record<string, MenuAddition[]>) => {
-    const additionsTotal = Object.values(selections).flat().reduce((sum, opt) => sum + opt.price, 0);
-    return item.basePrice + additionsTotal;
   };
 
   const handleAddToCart = () => {
     if (!selectedItem) return;
-    const newItem: CartItem = {
-      cartId: Math.random().toString(36).substr(2, 9),
-      menuItem: selectedItem,
-      selectedAdditions: currentSelections,
-      quantity: 1,
-      totalPrice: calculateItemTotal(selectedItem, currentSelections)
-    };
-    setCart(prev => [...prev, newItem]);
+    addToCart(selectedItem, currentSelections);
     setModalOpen(false);
   };
 
-  const handleRemoveFromCart = (cartId: string) => {
-    setCart(prev => prev.filter(item => item.cartId !== cartId));
-  };
+  const removeFromCart = (cartId: string) => setCart(prev => prev.filter(i => i.cartId !== cartId));
+  const cartTotal = cart.reduce((s, i) => s + i.totalPrice * i.quantity, 0);
 
-  const cartTotal = cart.reduce((sum, item) => sum + (item.totalPrice * item.quantity), 0);
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-background pb-24 font-sans text-foreground">
-      <header className="sticky top-0 z-50 glass shadow-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="animate-reveal flex items-center gap-4">
-            <img src="/brand/logo.png" alt="Marmitaria Araras Logo" className="h-20 w-auto drop-shadow-md" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-            <div className="flex flex-col">
-              <h1 className="text-2xl font-serif font-bold tracking-tight text-foreground">Marmitaria <span className="text-primary">Araras</span></h1>
-              <p className="text-[10px] uppercase tracking-[0.2em] font-bold opacity-50">Gastronomia Caseira Premium</p>
+    <div className="min-h-screen bg-[#f7f7f3] pb-24">
+
+      {/* ── Header ── */}
+      <header className="sticky top-0 z-50 bg-white shadow-sm border-b border-gray-100">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Logo Marmitaria Araras" className="h-12 w-12 object-contain rounded-full" />
+            <div>
+              <h1 className="font-bold text-base text-gray-900 leading-tight">Marmitaria Araras</h1>
+              <p className="text-[10px] text-gray-500 italic">Sabor de Casa, Preço Justo</p>
+              <span className={cn(
+                "inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full mt-0.5",
+                storeOpen ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
+              )}>
+                <span className={cn("w-1.5 h-1.5 rounded-full", storeOpen ? "bg-green-500 animate-pulse" : "bg-red-500")} />
+                {storeOpen ? "ABERTO" : "FECHADO"}
+              </span>
             </div>
           </div>
-          <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
+
+          <Sheet open={isCartOpen} onOpenChange={v => { setIsCartOpen(v); if (!v) setCheckoutStep("cart"); }}>
             <SheetTrigger asChild>
-              <Button variant="ghost" className="relative group hover:bg-primary/10 rounded-full px-6 transition-all duration-300 border border-primary/20 bg-white/50">
-                <ShoppingBag className="h-5 w-5 mr-3 text-primary group-hover:scale-110 transition-transform" />
-                <span className="font-bold tracking-tighter text-base text-foreground">R$ {cartTotal.toFixed(2)}</span>
+              <Button className="relative bg-primary hover:bg-primary/90 text-primary-foreground rounded-full px-4 h-10 font-bold shadow">
+                <ShoppingBag className="h-4 w-4 mr-2" />
+                R$ {cartTotal.toFixed(2)}
                 {cart.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] font-black rounded-full h-5 w-5 flex items-center justify-center shadow-lg shadow-primary/30 animate-bounce">{cart.length}</span>
+                  <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-black rounded-full h-4 w-4 flex items-center justify-center shadow">{cart.length}</span>
                 )}
               </Button>
             </SheetTrigger>
-            <SheetContent className="flex flex-col w-full sm:max-w-md glass border-l-black/5">
-              <SheetHeader className="border-b border-black/5 pb-4">
-                <SheetTitle className="font-serif text-2xl text-foreground">Seu Pedido <span className="text-primary">Gourmet</span></SheetTitle>
+            <SheetContent className="flex flex-col w-full sm:max-w-md">
+              <SheetHeader className="border-b pb-3">
+                <SheetTitle className="font-bold text-lg">Seu Pedido</SheetTitle>
               </SheetHeader>
               <ScrollArea className="flex-1 -mx-6 px-6 py-4">
                 {cart.length === 0 ? (
-                  <div className="text-center text-neutral-500 mt-10">Seu carrinho esta vazio.</div>
+                  <p className="text-center text-gray-400 mt-10 text-sm">Carrinho vazio</p>
                 ) : (
-                  <div className="space-y-4">
-                    {cart.map((item) => (
-                      <div key={item.cartId} className="flex justify-between items-start pt-2">
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-sm">{item.quantity}x {item.menuItem.name}</h4>
-                          {Object.entries(item.selectedAdditions).map(([groupId, additions]) =>
-                            additions.map(opt => (
-                              <p key={opt.id} className="text-xs text-neutral-500 ml-4">+ {opt.name}</p>
-                            ))
-                          )}
-                          <button onClick={() => handleRemoveFromCart(item.cartId)} className="text-xs text-red-500 mt-1 hover:underline">Remover</button>
+                  <div className="space-y-3">
+                    {cart.map(item => (
+                      <div key={item.cartId} className="flex items-start justify-between gap-2 py-2 border-b border-gray-100">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{item.menuItem.name}</p>
+                          {Object.values(item.selectedAdditions).flat().map(a => (
+                            <p key={a.id} className="text-xs text-gray-500 ml-2">+ {a.name}</p>
+                          ))}
+                          <p className="text-xs font-bold text-primary mt-1">R$ {item.totalPrice.toFixed(2)}</p>
                         </div>
-                        <span className="font-medium text-sm">R$ {(item.totalPrice * item.quantity).toFixed(2)}</span>
+                        <button onClick={() => removeFromCart(item.cartId)} className="text-red-400 hover:text-red-600 p-1 shrink-0">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     ))}
                   </div>
                 )}
               </ScrollArea>
-              <div className="pt-6 border-t border-primary/10">
-                <div className="flex justify-between font-serif font-bold text-2xl mb-6 text-primary">
+              <div className="pt-4 border-t space-y-3">
+                <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>
-                  <span>R$ {cartTotal.toFixed(2)}</span>
+                  <span className="text-primary">R$ {cartTotal.toFixed(2)}</span>
                 </div>
                 {checkoutStep === "cart" && (
-                  <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-14 rounded-2xl transition-all duration-300 shadow-lg shadow-primary/20" disabled={cart.length === 0} onClick={() => setCheckoutStep("form")}>
-                    Prosseguir para Entrega
+                  <Button className="w-full h-12 font-bold rounded-xl bg-primary hover:bg-primary/90" disabled={cart.length === 0} onClick={() => setCheckoutStep("form")}>
+                    Finalizar Pedido
                   </Button>
                 )}
                 {checkoutStep === "form" && (
-                  <div className="space-y-3">
-                    <input type="text" placeholder="Seu nome *" value={customerInfo.nome} onChange={e => setCustomerInfo(p => ({ ...p, nome: e.target.value }))} className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
-                    <input type="tel" placeholder="WhatsApp / Telefone *" value={customerInfo.telefone} onChange={e => setCustomerInfo(p => ({ ...p, telefone: e.target.value }))} className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
-                    <textarea placeholder="Observacoes (opcional)" value={customerInfo.observacoes} onChange={e => setCustomerInfo(p => ({ ...p, observacoes: e.target.value }))} rows={2} className="w-full border border-neutral-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none" />
-                    <div className="flex gap-3">
-                      <Button variant="ghost" className="flex-1 h-12 text-sm font-bold border border-primary/20 rounded-xl" onClick={() => setCheckoutStep("cart")}>Voltar</Button>
-                      <Button className="flex-[2] bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 text-sm rounded-xl transition-all duration-300 shadow-lg shadow-primary/10"
+                  <div className="space-y-2">
+                    <input type="text" placeholder="Seu nome *" value={customerInfo.nome} onChange={e => setCustomerInfo(p => ({ ...p, nome: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                    <input type="tel" placeholder="WhatsApp *" value={customerInfo.telefone} onChange={e => setCustomerInfo(p => ({ ...p, telefone: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                    <textarea placeholder="Observações (opcional)" value={customerInfo.observacoes} onChange={e => setCustomerInfo(p => ({ ...p, observacoes: e.target.value }))} rows={2} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1 h-10 rounded-xl text-sm" onClick={() => setCheckoutStep("cart")}>Voltar</Button>
+                      <Button className="flex-[2] h-10 font-bold rounded-xl bg-primary hover:bg-primary/90 text-sm"
                         disabled={!customerInfo.nome || !customerInfo.telefone}
                         onClick={async () => {
                           try {
                             const res = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart, total: cartTotal, customerInfo }) });
                             const data = await res.json();
-                            if (data.checkoutUrl) { window.location.href = data.checkoutUrl; }
-                            else { alert('Pedido registrado!'); }
-                          } catch (e) { console.error("Erro", e); alert("Erro ao finalizar pedido."); }
+                            if (data.checkoutUrl) window.location.href = data.checkoutUrl;
+                            else alert('Pedido registrado!');
+                          } catch { alert("Erro ao finalizar pedido."); }
                         }}>
-                        Confirmar Pedido
+                        Confirmar
                       </Button>
                     </div>
                   </div>
@@ -183,108 +248,216 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-12 max-w-4xl">
+      {/* ── Banner loja fechada ── */}
+      {!storeOpen && (
+        <div className="max-w-2xl mx-auto px-4 pt-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center">
+            <p className="text-2xl mb-1">🕐</p>
+            <h2 className="font-bold text-amber-900 text-base">Pedidos Encerrados</h2>
+            <p className="text-amber-700 text-sm mt-1">Aceitamos pedidos de <strong>seg–sáb, 11h às 15h</strong>.<br />Fique à vontade para ver o cardápio!</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main ── */}
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-8">
+
         {menuLoading && (
-          <div className="flex flex-col items-center justify-center py-20 animate-pulse">
-            <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-4" />
-            <p className="text-primary/60 font-medium italic">Preparando seu cardapio...</p>
+          <div className="flex flex-col items-center py-20">
+            <div className="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-3" />
+            <p className="text-sm text-gray-400 italic">Carregando cardápio...</p>
           </div>
         )}
-        {!menuLoading && categories.map((category, idx) => (
-          <div key={category} className="mb-16 animate-reveal" style={{ animationDelay: `${idx * 0.1}s` }}>
-            <div className="flex items-center gap-4 mb-8">
-              <h2 className="text-3xl font-serif font-bold text-foreground whitespace-nowrap">{category}</h2>
-              <div className="h-[1px] w-full bg-gradient-to-r from-primary/30 to-transparent" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {menuData.filter(item => item.category === category).sort((a, b) => a.basePrice - b.basePrice).map(item => (
-                <Card key={item.id} className="group overflow-hidden rounded-2xl border-none premium-shadow hover:scale-[1.02] transition-all duration-500 cursor-pointer bg-card/50 backdrop-blur-sm" onClick={() => handleOpenModal(item)}>
-                  <div className="flex h-40">
-                    <div className="flex-1 p-5 flex flex-col justify-between">
-                      <div>
-                        <h3 className="font-serif text-xl font-bold text-foreground group-hover:text-primary transition-colors line-clamp-1">{item.name}</h3>
-                        <p className="text-xs text-muted-foreground mt-2 line-clamp-2 leading-relaxed">{item.description}</p>
-                      </div>
-                      <div className="flex items-end justify-between">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] uppercase tracking-tighter font-bold opacity-40">A partir de</span>
-                          <span className="font-serif text-lg font-bold text-primary">R$ {item.basePrice.toFixed(2)}</span>
-                        </div>
-                        <div className="bg-primary/10 p-2 rounded-full group-hover:bg-primary group-hover:text-white transition-all duration-300">
-                          <Plus className="h-4 w-4" />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="w-32 h-full bg-muted overflow-hidden relative">
-                      <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                      <div className="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors" />
-                    </div>
-                  </div>
-                </Card>
+
+        {/* ── Marmitas ── */}
+        {!menuLoading && marmitaGroups.length > 0 && (
+          <section>
+            <SectionTitle emoji="🍱" title="Marmitas" />
+            <div className="space-y-3">
+              {marmitaGroups.map(group => (
+                <MarmitaCard key={group.baseName} group={group} storeOpen={storeOpen} onAdd={addToCart} />
               ))}
             </div>
-          </div>
+          </section>
+        )}
+
+        {/* ── Adicionais ── */}
+        {!menuLoading && adicionais.length > 0 && (
+          <section>
+            <SectionTitle emoji="➕" title="Adicionais" />
+            <div className="space-y-2">
+              {adicionais.map(item => (
+                <SimpleCard key={item.id} item={item} storeOpen={storeOpen} onAdd={() => openModal(item)} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Bebidas / Sobremesas / outros ── */}
+        {!menuLoading && Object.entries(categorizedOthers).map(([category, items]) => (
+          <section key={category}>
+            <SectionTitle
+              emoji={category === 'Bebidas' ? '🥤' : category === 'Sobremesas' ? '🍮' : '🍽️'}
+              title={category}
+            />
+            <div className="space-y-2">
+              {items.map(item => (
+                <SimpleCard key={item.id} item={item} storeOpen={storeOpen} onAdd={() => openModal(item)} />
+              ))}
+            </div>
+          </section>
         ))}
+
       </main>
 
+      {/* ── Modal de adicionais (para itens com grupos) ── */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-md w-full max-h-[90vh] p-0 overflow-hidden flex flex-col rounded-t-[2rem] sm:rounded-[2rem] border-none shadow-2xl animate-reveal bg-card">
+        <DialogContent className="max-w-md w-full max-h-[85vh] overflow-hidden flex flex-col p-0 rounded-2xl border-none">
           {selectedItem && (
-            <div className="flex flex-col h-[90vh] overflow-hidden bg-transparent">
-              <div className="h-64 w-full relative shrink-0">
+            <>
+              <div className="relative h-44 shrink-0">
                 <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                <DialogTitle className="absolute bottom-6 left-6 text-white text-2xl font-serif font-bold drop-shadow-md pr-6">{selectedItem.name}</DialogTitle>
-                <button onClick={() => setModalOpen(false)} className="absolute top-4 right-4 bg-black/20 hover:bg-black/40 backdrop-blur-md text-white p-2 rounded-full transition-colors z-50 sm:hidden">
-                  <Plus className="h-5 w-5 rotate-45" />
-                </button>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                <DialogTitle className="absolute bottom-4 left-4 text-white text-xl font-bold drop-shadow">{selectedItem.name}</DialogTitle>
               </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar">
-                <div className="px-6 py-6 space-y-8 pb-32">
-                  <p className="text-stone-500 text-sm leading-relaxed px-1">{selectedItem.description}</p>
-                  {selectedItem.groups.map((group) => {
-                    const isRequired = group.min > 0;
-                    return (
-                      <div key={group.id} className="animate-reveal">
-                        <div className="bg-secondary/50 p-4 rounded-2xl mb-4 flex justify-between items-center border border-black/5">
-                          <div>
-                            <h4 className="font-serif text-base font-bold text-foreground">{group.title}</h4>
-                            <span className="text-[10px] uppercase tracking-wider font-bold opacity-40 text-foreground">Escolha ate {group.max}</span>
-                          </div>
-                          {isRequired && <span className="text-[10px] uppercase tracking-widest font-black text-primary">Obrigatorio</span>}
-                        </div>
-                        <div className="grid gap-2">
-                          {group.options.map((option) => {
-                            const isSelected = (currentSelections[group.id] || []).some((opt) => opt.id === option.id);
-                            return (
-                              <button key={option.id} onClick={() => handleToggleAddition(group, option)}
-                                className={`w-full flex justify-between items-center p-4 rounded-xl transition-all duration-300 text-left border ${isSelected ? 'bg-primary/5 border-primary/20 shadow-sm' : 'bg-white/50 border-black/5 hover:bg-black/5'}`}>
-                                <div className="flex items-center gap-4">
-                                  <div className={`w-6 h-6 border-2 flex items-center justify-center transition-all duration-300 ${group.max === 1 ? 'rounded-full' : 'rounded-lg'} ${isSelected ? 'bg-primary border-primary shadow-lg shadow-primary/20' : 'border-black/10 bg-black/5'}`}>
-                                    {isSelected && <div className={`bg-primary-foreground ${group.max === 1 ? 'w-2.5 h-2.5 rounded-full' : 'w-3 h-3'}`} />}
-                                  </div>
-                                  <span className="text-sm font-medium block text-foreground">{option.name}</span>
-                                </div>
-                                <span className="text-sm font-serif text-primary font-bold">+ R$ {option.price.toFixed(2)}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
+              <ScrollArea className="flex-1 px-4 py-4">
+                {selectedItem.groups.map(group => (
+                  <div key={group.id} className="mb-6">
+                    <div className="bg-gray-50 rounded-xl px-4 py-2.5 mb-3 flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-sm text-gray-900">{group.title}</p>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide">Escolha até {group.max}</p>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 p-6 bg-white/80 backdrop-blur-xl border-t border-black/5 z-50">
-                <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-14 rounded-2xl flex justify-between px-8 text-lg transition-all duration-300 active:scale-95 shadow-lg shadow-primary/30" onClick={handleAddToCart}>
-                  <span className="tracking-tight">Adicionar ao Pedido</span>
-                  <span className="font-serif">R$ {calculateItemTotal(selectedItem, currentSelections).toFixed(2)}</span>
+                      {group.min > 0 && <span className="text-[10px] font-black text-primary uppercase tracking-widest">Obrigatório</span>}
+                    </div>
+                    <div className="space-y-2">
+                      {group.options.map(option => {
+                        const selected = (currentSelections[group.id] || []).some(o => o.id === option.id);
+                        return (
+                          <button key={option.id} onClick={() => handleToggleAddition(group, option)}
+                            className={cn("w-full flex justify-between items-center px-4 py-3 rounded-xl border-2 transition-all text-left",
+                              selected ? "border-primary bg-primary/5" : "border-gray-100 bg-white hover:border-gray-200"
+                            )}>
+                            <div className="flex items-center gap-3">
+                              <div className={cn("w-5 h-5 border-2 flex items-center justify-center shrink-0 transition-all",
+                                group.max === 1 ? "rounded-full" : "rounded-md",
+                                selected ? "border-primary bg-primary" : "border-gray-300"
+                              )}>
+                                {selected && <div className="w-2 h-2 bg-white rounded-full" />}
+                              </div>
+                              <span className="text-sm font-medium text-gray-900">{option.name}</span>
+                            </div>
+                            <span className="text-sm font-bold text-primary">+ R$ {option.price.toFixed(2)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </ScrollArea>
+              <div className="px-4 pb-4 pt-2 border-t">
+                <Button className="w-full h-12 bg-primary hover:bg-primary/90 font-bold rounded-xl text-base"
+                  disabled={!storeOpen}
+                  onClick={handleAddToCart}>
+                  {storeOpen ? `Adicionar · R$ ${(selectedItem.basePrice + Object.values(currentSelections).flat().reduce((s, a) => s + a.price, 0)).toFixed(2)}` : 'Loja Fechada'}
                 </Button>
               </div>
-            </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
+
+    </div>
+  );
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SectionTitle({ emoji, title }: { emoji: string; title: string }) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <span className="text-xl">{emoji}</span>
+      <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+      <div className="flex-1 h-px bg-gray-200" />
+    </div>
+  );
+}
+
+function MarmitaCard({ group, storeOpen, onAdd }: {
+  group: MarmitaGroup;
+  storeOpen: boolean;
+  onAdd: (item: MenuItem, selections: Record<string, MenuAddition[]>) => void;
+}) {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="flex p-4 gap-3">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-base text-gray-900">{group.baseName}</h3>
+          {group.description && (
+            <p className="text-xs text-gray-500 mt-1 line-clamp-2 leading-relaxed">{group.description}</p>
+          )}
+          <div className="flex gap-2 mt-3 flex-wrap">
+            {group.sizes.map(({ label, item }) => (
+              <button
+                key={label}
+                disabled={!storeOpen}
+                onClick={() => onAdd(item, {})}
+                className={cn(
+                  "flex flex-col items-center px-3 py-2 rounded-xl border-2 transition-all",
+                  storeOpen
+                    ? "border-primary/40 text-primary hover:border-primary hover:bg-primary/5 active:scale-95"
+                    : "border-gray-200 text-gray-400 cursor-not-allowed"
+                )}
+              >
+                <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{label}</span>
+                <span className="text-sm font-bold">R$ {item.basePrice.toFixed(2)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="w-24 h-24 shrink-0 rounded-xl overflow-hidden bg-gradient-to-br from-amber-100 to-orange-200 flex items-center justify-center text-3xl">
+          {group.image
+            ? <img src={group.image} alt={group.baseName} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+            : '🍱'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SimpleCard({ item, storeOpen, onAdd }: {
+  item: MenuItem;
+  storeOpen: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
+      <div className="flex items-center gap-3 p-3">
+        <div className="w-16 h-16 shrink-0 rounded-xl overflow-hidden bg-gradient-to-br from-amber-100 to-orange-200 flex items-center justify-center text-2xl">
+          {item.image
+            ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+            : item.category === 'Bebidas' ? '🥤' : item.category === 'Sobremesas' ? '🍮' : '🍽️'}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-sm text-gray-900 leading-snug">{item.name}</h3>
+          {item.description && (
+            <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{item.description}</p>
+          )}
+          <p className="text-primary font-bold text-sm mt-1">R$ {item.basePrice.toFixed(2)}</p>
+        </div>
+        <button
+          disabled={!storeOpen}
+          onClick={onAdd}
+          className={cn(
+            "w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all",
+            storeOpen
+              ? "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 shadow"
+              : "bg-gray-100 text-gray-400 cursor-not-allowed"
+          )}
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

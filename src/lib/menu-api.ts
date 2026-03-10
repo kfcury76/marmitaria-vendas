@@ -1,59 +1,74 @@
 import { supabase } from '@/lib/supabase';
-import { MenuItem, MenuGroup, MenuAddition } from '@/data/menu';
+import { MenuItem, MenuGroup } from '@/data/menu';
 
 /**
- * Busca o cardapio inteiro do Supabase e formata exatamente como o App espera
+ * Busca o cardápio completo da Marmitaria Araras (Pratos e Bebidas)
  */
 export async function getRealMenu(): Promise<MenuItem[]> {
     try {
-        const { data: items, error } = await supabase
+        // Buscar Itens do Menu do Novo Sistema Sync
+        const { data: dishes, error: dishError } = await supabase
             .from('menu_items')
             .select(`
-        id, name, description, base_price, image_url, sort_order,
-        category:category_id(name),
-        groups:menu_groups(
-          id, title, min_options, max_options, sort_order,
-          options:menu_additions(id, name, price, sort_order)
-        )
-      `)
+                id, 
+                name, 
+                description, 
+                base_price, 
+                image_url, 
+                category:category_id (name),
+                groups:menu_groups (
+                    id,
+                    title,
+                    min_options,
+                    max_options,
+                    additions:menu_additions (
+                        id,
+                        name,
+                        price,
+                        is_active
+                    )
+                )
+            `)
+            .eq('business_unit', 'marmitaria')
             .eq('is_active', true)
             .order('sort_order', { ascending: true });
 
-        if (error) throw error;
-        if (!items) return [];
+        if (dishError) throw dishError;
 
-        const formattedMenu: MenuItem[] = items.map((item: any) => {
-            const formattedGroups: MenuGroup[] = (item.groups || [])
-                .sort((a: any, b: any) => a.sort_order - b.sort_order)
-                .map((g: any) => {
-                    const formattedOptions: MenuAddition[] = (g.options || [])
-                        .sort((a: any, b: any) => a.sort_order - b.sort_order)
-                        .map((opt: any) => ({
-                            id: opt.id,
-                            name: opt.name,
-                            price: Number(opt.price)
-                        }));
-                    return {
-                        id: g.id,
-                        title: g.title,
-                        min: g.min_options,
-                        max: g.max_options,
-                        options: formattedOptions
-                    };
+        const formattedMenu: MenuItem[] = [];
+
+        if (dishes) {
+            dishes.forEach((item: any) => {
+                const groups: MenuGroup[] = (item.groups || []).map((g: any) => ({
+                    id: g.id,
+                    title: g.title || "Opções",
+                    min: g.min_options || 0,
+                    max: g.max_options || 10,
+                    options: (g.additions || [])
+                        .filter((a: any) => a.is_active)
+                        .map((a: any) => ({
+                            id: a.id,
+                            name: a.name,
+                            price: Number(a.price)
+                        }))
+                }));
+
+                formattedMenu.push({
+                    id: item.id,
+                    name: item.name,
+                    description: item.description || "",
+                    basePrice: Number(item.base_price || 0),
+                    price: Number(item.base_price || 0),
+                    image: item.image_url || "",
+                    category: item.category?.name || "Geral",
+                    groups
                 });
-            return {
-                id: item.id,
-                name: item.name,
-                description: item.description || "",
-                basePrice: Number(item.base_price),
-                image: item.image_url || "/placeholder.svg",
-                category: item.category?.name || "Sem Categoria",
-                groups: formattedGroups
-            };
-        });
+            });
+        }
+
         return formattedMenu;
-    } catch (err) {
-        console.error("Erro ao puxar dados do Supabase:", err);
+    } catch (error) {
+        console.error("Erro ao buscar cardápio:", error);
         return [];
     }
 }

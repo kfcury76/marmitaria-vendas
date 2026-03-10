@@ -17,6 +17,8 @@ export type MenuItem = {
   name: string;
   description: string;
   basePrice: number;
+  price?: number;
+  originalPrice?: number;
   image: string;
   category: string;
   groups: MenuGroup[];
@@ -47,26 +49,32 @@ export const MENU_DATA: MenuItem[] = [
 
 function getStandardGroups(): MenuGroup[] {
   return [
-    { id: "g1", title: "Deseja Uma Marmita Maior?", min: 0, max: 1, options: [
-      { id: "opt-g1-m", name: "Marmita M - aprox. 750G", price: 6.90 },
-      { id: "opt-g1-g", name: "Marmita G - aprox. 1KG", price: 10.90 },
-    ]},
-    { id: "g2", title: "Turbine a Sua Marmita / Adicionais", min: 0, max: 8, options: [
-      { id: "opt-g2-salada", name: "Salada", price: 3.90 },
-      { id: "opt-g2-ovo", name: "Ovo", price: 3.90 },
-      { id: "opt-g2-batata", name: "Batata Frita 150g", price: 4.90 },
-      { id: "opt-g2-frango", name: "File de Frango Grelhado", price: 7.90 },
-      { id: "opt-g2-bisteca-s", name: "Bisteca Suina", price: 7.90 },
-      { id: "opt-g2-bisteca-b", name: "Bisteca Bovina", price: 8.90 },
-      { id: "opt-g2-bife-a", name: "Bife Acebolado", price: 8.90 },
-      { id: "opt-g2-bife", name: "Bife", price: 8.90 },
-    ]},
-    { id: "g3", title: "Vai Um Docinho? / Sobremesas", min: 0, max: 5, options: [
-      { id: "opt-g3-brigadeiro", name: "Brigadeiro Tradicional 30g", price: 6.00 },
-      { id: "opt-g3-palha", name: "Palha Italiana Classica 120g", price: 7.00 },
-      { id: "opt-g3-bomba", name: "Bomba de Chocolate 110g", price: 9.00 },
-      { id: "opt-g3-gelatina", name: "Gelatina Colorida 100g", price: 9.00 },
-      { id: "opt-g3-pudim", name: "Pudim de Leite Condensado 120g", price: 11.00 },
-    ]},
+    {
+      id: "g1", title: "Deseja Uma Marmita Maior?", min: 0, max: 1, options: [
+        { id: "opt-g1-m", name: "Marmita M - aprox. 750G", price: 6.90 },
+        { id: "opt-g1-g", name: "Marmita G - aprox. 1KG", price: 10.90 },
+      ]
+    },
+    {
+      id: "g2", title: "Turbine a Sua Marmita / Adicionais", min: 0, max: 8, options: [
+        { id: "opt-g2-salada", name: "Salada", price: 3.90 },
+        { id: "opt-g2-ovo", name: "Ovo", price: 3.90 },
+        { id: "opt-g2-batata", name: "Batata Frita 150g", price: 4.90 },
+        { id: "opt-g2-frango", name: "File de Frango Grelhado", price: 7.90 },
+        { id: "opt-g2-bisteca-s", name: "Bisteca Suina", price: 7.90 },
+        { id: "opt-g2-bisteca-b", name: "Bisteca Bovina", price: 8.90 },
+        { id: "opt-g2-bife-a", name: "Bife Acebolado", price: 8.90 },
+        { id: "opt-g2-bife", name: "Bife", price: 8.90 },
+      ]
+    },
+    {
+      id: "g3", title: "Vai Um Docinho? / Sobremesas", min: 0, max: 5, options: [
+        { id: "opt-g3-brigadeiro", name: "Brigadeiro Tradicional 30g", price: 6.00 },
+        { id: "opt-g3-palha", name: "Palha Italiana Classica 120g", price: 7.00 },
+        { id: "opt-g3-bomba", name: "Bomba de Chocolate 110g", price: 9.00 },
+        { id: "opt-g3-gelatina", name: "Gelatina Colorida 100g", price: 9.00 },
+        { id: "opt-g3-pudim", name: "Pudim de Leite Condensado 120g", price: 11.00 },
+      ]
+    },
   ];
 }
