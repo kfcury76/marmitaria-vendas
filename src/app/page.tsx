@@ -95,7 +95,7 @@ export default function Home() {
     const brt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
     const day = brt.getDay();
     const totalMin = brt.getHours() * 60 + brt.getMinutes();
-    return day >= 1 && day <= 6 && totalMin >= 660 && totalMin <= 900;
+    return day >= 1 && day <= 5 && totalMin >= 660 && totalMin <= 900;
   })();
 
   useEffect(() => {
@@ -282,7 +282,7 @@ export default function Home() {
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center">
             <p className="text-2xl mb-1">🕐</p>
             <h2 className="font-bold text-amber-900 text-base">Pedidos Encerrados</h2>
-            <p className="text-amber-700 text-sm mt-1">Aceitamos pedidos de <strong>seg–sáb, 11h às 15h</strong>.<br />Fique à vontade para ver o cardápio!</p>
+            <p className="text-amber-700 text-sm mt-1">Aceitamos pedidos de <strong>seg–sex, 11h às 15h</strong>.<br />Fique à vontade para ver o cardápio!</p>
           </div>
         </div>
       )}
