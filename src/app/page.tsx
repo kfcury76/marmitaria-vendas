@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ShoppingBag, Plus, Trash2 } from 'lucide-react';
+import { ShoppingBag, Plus, Minus, Trash2 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -32,6 +32,8 @@ type MarmitaGroup = {
   image: string;
   sizes: { label: string; item: MenuItem }[];
 };
+
+type ExtraSelection = { item: MenuItem; qty: number };
 
 // ─── Grouping Logic ──────────────────────────────────────────────────────────
 
@@ -84,6 +86,7 @@ export default function Home() {
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [currentSelections, setCurrentSelections] = useState<Record<string, MenuAddition[]>>({});
+  const [extraSelections, setExtraSelections] = useState<ExtraSelection[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({ nome: "", telefone: "", observacoes: "" });
   const [checkoutStep, setCheckoutStep] = useState<"cart" | "form">("cart");
@@ -109,7 +112,11 @@ export default function Home() {
     return acc;
   }, {});
 
-  // ── Cart actions ────────────────────────────────────────────────────────────
+  const bebidas = categorizedOthers['Bebidas'] || [];
+  const sobremesas = categorizedOthers['Sobremesas'] || [];
+  const otherCategories = Object.entries(categorizedOthers).filter(([cat]) => cat !== 'Bebidas' && cat !== 'Sobremesas');
+
+  // ── Cart actions ──────────────────────────────────────────────────────────
 
   const addToCart = (item: MenuItem, selections: Record<string, MenuAddition[]> = {}) => {
     const addPrice = Object.values(selections).flat().reduce((s, a) => s + a.price, 0);
@@ -122,13 +129,18 @@ export default function Home() {
     }]);
   };
 
-  const openModal = (item: MenuItem) => {
-    if (item.groups.length === 0) {
-      addToCart(item);
-      return;
-    }
+  const openMarmitaModal = (item: MenuItem) => {
     setSelectedItem(item);
     setCurrentSelections({});
+    setExtraSelections([...bebidas, ...sobremesas].map(i => ({ item: i, qty: 0 })));
+    setModalOpen(true);
+  };
+
+  const openSimpleModal = (item: MenuItem) => {
+    if (item.groups.length === 0) { addToCart(item); return; }
+    setSelectedItem(item);
+    setCurrentSelections({});
+    setExtraSelections([]);
     setModalOpen(true);
   };
 
@@ -142,16 +154,32 @@ export default function Home() {
     });
   };
 
+  const updateExtraQty = (itemId: string, delta: number) => {
+    setExtraSelections(prev => prev.map(e =>
+      e.item.id === itemId ? { ...e, qty: Math.max(0, e.qty + delta) } : e
+    ));
+  };
+
   const handleAddToCart = () => {
     if (!selectedItem) return;
     addToCart(selectedItem, currentSelections);
+    extraSelections.filter(e => e.qty > 0).forEach(e => {
+      for (let i = 0; i < e.qty; i++) addToCart(e.item, {});
+    });
     setModalOpen(false);
   };
 
   const removeFromCart = (cartId: string) => setCart(prev => prev.filter(i => i.cartId !== cartId));
   const cartTotal = cart.reduce((s, i) => s + i.totalPrice * i.quantity, 0);
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  const additionsTotal = Object.values(currentSelections).flat().reduce((s, a) => s + a.price, 0);
+  const extrasTotal = extraSelections.reduce((s, e) => s + e.item.basePrice * e.qty, 0);
+  const modalTotal = selectedItem ? selectedItem.basePrice + additionsTotal + extrasTotal : 0;
+
+  const modalBebidas = extraSelections.filter(e => e.item.category === 'Bebidas');
+  const modalSobremesas = extraSelections.filter(e => e.item.category === 'Sobremesas');
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-[#f7f7f3] pb-24">
@@ -275,7 +303,7 @@ export default function Home() {
             <SectionTitle emoji="🍱" title="Marmitas" />
             <div className="space-y-3">
               {marmitaGroups.map(group => (
-                <MarmitaCard key={group.baseName} group={group} storeOpen={storeOpen} onAdd={addToCart} />
+                <MarmitaCard key={group.baseName} group={group} storeOpen={storeOpen} onSelectSize={openMarmitaModal} />
               ))}
             </div>
           </section>
@@ -287,22 +315,19 @@ export default function Home() {
             <SectionTitle emoji="➕" title="Adicionais" />
             <div className="space-y-2">
               {adicionais.map(item => (
-                <SimpleCard key={item.id} item={item} storeOpen={storeOpen} onAdd={() => openModal(item)} />
+                <SimpleCard key={item.id} item={item} storeOpen={storeOpen} onAdd={() => openSimpleModal(item)} />
               ))}
             </div>
           </section>
         )}
 
-        {/* ── Bebidas / Sobremesas / outros ── */}
-        {!menuLoading && Object.entries(categorizedOthers).map(([category, items]) => (
+        {/* ── Outras categorias (não Bebidas/Sobremesas — ficam no popup) ── */}
+        {!menuLoading && otherCategories.map(([category, items]) => (
           <section key={category}>
-            <SectionTitle
-              emoji={category === 'Bebidas' ? '🥤' : category === 'Sobremesas' ? '🍮' : '🍽️'}
-              title={category}
-            />
+            <SectionTitle emoji="🍽️" title={category} />
             <div className="space-y-2">
               {items.map(item => (
-                <SimpleCard key={item.id} item={item} storeOpen={storeOpen} onAdd={() => openModal(item)} />
+                <SimpleCard key={item.id} item={item} storeOpen={storeOpen} onAdd={() => openSimpleModal(item)} />
               ))}
             </div>
           </section>
@@ -310,17 +335,25 @@ export default function Home() {
 
       </main>
 
-      {/* ── Modal de adicionais (para itens com grupos) ── */}
+      {/* ── Modal de personalização ── */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-md w-full max-h-[85vh] overflow-hidden flex flex-col p-0 rounded-2xl border-none">
           {selectedItem && (
             <>
+              {/* Imagem + título */}
               <div className="relative h-44 shrink-0">
-                <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                {selectedItem.image ? (
+                  <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-amber-100 to-orange-200 flex items-center justify-center text-6xl">🍱</div>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                 <DialogTitle className="absolute bottom-4 left-4 text-white text-xl font-bold drop-shadow">{selectedItem.name}</DialogTitle>
               </div>
+
               <ScrollArea className="flex-1 px-4 py-4">
+
+                {/* ── Grupos / Complementos ── */}
                 {selectedItem.groups.map(group => (
                   <div key={group.id} className="mb-6">
                     <div className="bg-gray-50 rounded-xl px-4 py-2.5 mb-3 flex justify-between items-center">
@@ -347,19 +380,52 @@ export default function Home() {
                               </div>
                               <span className="text-sm font-medium text-gray-900">{option.name}</span>
                             </div>
-                            <span className="text-sm font-bold text-primary">+ R$ {option.price.toFixed(2)}</span>
+                            {option.price > 0 && <span className="text-sm font-bold text-primary">+ R$ {option.price.toFixed(2)}</span>}
                           </button>
                         );
                       })}
                     </div>
                   </div>
                 ))}
+
+                {/* ── Bebidas ── */}
+                {modalBebidas.length > 0 && (
+                  <div className="mb-6">
+                    <div className="bg-gray-50 rounded-xl px-4 py-2.5 mb-3">
+                      <p className="font-bold text-sm text-gray-900">🥤 Bebidas</p>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wide">Adicionar ao pedido</p>
+                    </div>
+                    <div className="space-y-2">
+                      {modalBebidas.map(({ item, qty }) => (
+                        <ExtraItem key={item.id} item={item} qty={qty} onUpdate={delta => updateExtraQty(item.id, delta)} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Sobremesas ── */}
+                {modalSobremesas.length > 0 && (
+                  <div className="mb-6">
+                    <div className="bg-gray-50 rounded-xl px-4 py-2.5 mb-3">
+                      <p className="font-bold text-sm text-gray-900">🍮 Sobremesas</p>
+                      <p className="text-[10px] text-gray-500 uppercase tracking-wide">Adicionar ao pedido</p>
+                    </div>
+                    <div className="space-y-2">
+                      {modalSobremesas.map(({ item, qty }) => (
+                        <ExtraItem key={item.id} item={item} qty={qty} onUpdate={delta => updateExtraQty(item.id, delta)} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
               </ScrollArea>
+
+              {/* Footer */}
               <div className="px-4 pb-4 pt-2 border-t">
                 <Button className="w-full h-12 bg-primary hover:bg-primary/90 font-bold rounded-xl text-base"
                   disabled={!storeOpen}
                   onClick={handleAddToCart}>
-                  {storeOpen ? `Adicionar · R$ ${(selectedItem.basePrice + Object.values(currentSelections).flat().reduce((s, a) => s + a.price, 0)).toFixed(2)}` : 'Loja Fechada'}
+                  {storeOpen ? `Adicionar · R$ ${modalTotal.toFixed(2)}` : 'Loja Fechada'}
                 </Button>
               </div>
             </>
@@ -383,10 +449,10 @@ function SectionTitle({ emoji, title }: { emoji: string; title: string }) {
   );
 }
 
-function MarmitaCard({ group, storeOpen, onAdd }: {
+function MarmitaCard({ group, storeOpen, onSelectSize }: {
   group: MarmitaGroup;
   storeOpen: boolean;
-  onAdd: (item: MenuItem, selections: Record<string, MenuAddition[]>) => void;
+  onSelectSize: (item: MenuItem) => void;
 }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -401,7 +467,7 @@ function MarmitaCard({ group, storeOpen, onAdd }: {
               <button
                 key={label}
                 disabled={!storeOpen}
-                onClick={() => onAdd(item, {})}
+                onClick={() => onSelectSize(item)}
                 className={cn(
                   "flex flex-col items-center px-3 py-2 rounded-xl border-2 transition-all",
                   storeOpen
@@ -456,6 +522,50 @@ function SimpleCard({ item, storeOpen, onAdd }: {
           )}
         >
           <Plus className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ExtraItem({ item, qty, onUpdate }: {
+  item: MenuItem;
+  qty: number;
+  onUpdate: (delta: number) => void;
+}) {
+  return (
+    <div className={cn(
+      "flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all",
+      qty > 0 ? "border-primary/40 bg-primary/5" : "border-gray-100 bg-white"
+    )}>
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-10 h-10 shrink-0 rounded-lg overflow-hidden bg-gradient-to-br from-amber-100 to-orange-200 flex items-center justify-center text-lg">
+          {item.image
+            ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none'; }} />
+            : item.category === 'Bebidas' ? '🥤' : '🍮'}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+          <p className="text-xs font-bold text-primary">R$ {item.basePrice.toFixed(2)}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={() => onUpdate(-1)}
+          disabled={qty === 0}
+          className={cn(
+            "w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all",
+            qty > 0 ? "border-primary text-primary hover:bg-primary/10" : "border-gray-200 text-gray-300 cursor-not-allowed"
+          )}
+        >
+          <Minus className="h-3 w-3" />
+        </button>
+        <span className="w-5 text-center text-sm font-bold text-gray-900">{qty}</span>
+        <button
+          onClick={() => onUpdate(1)}
+          className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center hover:bg-primary/90 transition-all"
+        >
+          <Plus className="h-3 w-3" />
         </button>
       </div>
     </div>
