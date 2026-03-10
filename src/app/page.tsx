@@ -33,7 +33,7 @@ type MarmitaGroup = {
   sizes: { label: string; item: MenuItem }[];
 };
 
-type ExtraSelection = { item: MenuItem; qty: number; section: 'adicional' | 'bebida' | 'sobremesa' };
+type ExtraSelection = { item: MenuItem; qty: number; section: 'acompanhamento' | 'adicional' | 'bebida' | 'sobremesa'; selected: boolean };
 
 // ─── Grouping Logic ──────────────────────────────────────────────────────────
 
@@ -133,9 +133,10 @@ export default function Home() {
     setSelectedItem(item);
     setCurrentSelections({});
     setExtraSelections([
-      ...adicionais.map(i => ({ item: i, qty: 0, section: 'adicional' as const })),
-      ...bebidas.map(i => ({ item: i, qty: 0, section: 'bebida' as const })),
-      ...sobremesas.map(i => ({ item: i, qty: 0, section: 'sobremesa' as const })),
+      ...adicionais.filter(i => i.name.startsWith('Acompanhamento - ')).map(i => ({ item: i, qty: 1, section: 'acompanhamento' as const, selected: true })),
+      ...adicionais.filter(i => !i.name.startsWith('Acompanhamento - ')).map(i => ({ item: i, qty: 0, section: 'adicional' as const, selected: false })),
+      ...bebidas.map(i => ({ item: i, qty: 0, section: 'bebida' as const, selected: false })),
+      ...sobremesas.map(i => ({ item: i, qty: 0, section: 'sobremesa' as const, selected: false })),
     ]);
     setModalOpen(true);
   };
@@ -164,10 +165,22 @@ export default function Home() {
     ));
   };
 
+  const toggleAcomp = (itemId: string) => {
+    setExtraSelections(prev => prev.map(e =>
+      e.item.id === itemId ? { ...e, selected: !e.selected } : e
+    ));
+  };
+
   const handleAddToCart = () => {
     if (!selectedItem) return;
-    addToCart(selectedItem, currentSelections);
-    extraSelections.filter(e => e.qty > 0).forEach(e => {
+    const acompAdditions = extraSelections
+      .filter(e => e.section === 'acompanhamento' && e.selected)
+      .map(e => ({ id: e.item.id, name: e.item.name.replace('Acompanhamento - ', ''), price: 0 }));
+    addToCart(selectedItem, {
+      ...currentSelections,
+      ...(acompAdditions.length > 0 ? { acomp: acompAdditions } : {}),
+    });
+    extraSelections.filter(e => e.section !== 'acompanhamento' && e.qty > 0).forEach(e => {
       for (let i = 0; i < e.qty; i++) addToCart(e.item, {});
     });
     setModalOpen(false);
@@ -180,6 +193,7 @@ export default function Home() {
   const extrasTotal = extraSelections.reduce((s, e) => s + e.item.basePrice * e.qty, 0);
   const modalTotal = selectedItem ? selectedItem.basePrice + additionsTotal + extrasTotal : 0;
 
+  const modalAcomp = extraSelections.filter(e => e.section === 'acompanhamento');
   const modalAdicionais = extraSelections.filter(e => e.section === 'adicional');
   const modalBebidas = extraSelections.filter(e => e.section === 'bebida');
   const modalSobremesas = extraSelections.filter(e => e.section === 'sobremesa');
@@ -380,6 +394,34 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
+
+                {/* ── Acompanhamentos (pré-selecionados, cliente desmarca se não quiser) ── */}
+                {modalAcomp.length > 0 && (
+                  <div className="mb-6">
+                    <div className="bg-gray-50 rounded-xl px-4 py-2.5 mb-3 flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-sm text-gray-900">🍽️ Acompanhamentos</p>
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide">Já incluídos — desmarque se não quiser</p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {modalAcomp.map(({ item, selected }) => (
+                        <button key={item.id} onClick={() => toggleAcomp(item.id)}
+                          className={cn('w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left',
+                            selected ? 'border-primary bg-primary/5' : 'border-gray-100 bg-white opacity-50'
+                          )}>
+                          <div className={cn('w-5 h-5 border-2 rounded-md flex items-center justify-center shrink-0 transition-all',
+                            selected ? 'border-primary bg-primary' : 'border-gray-300'
+                          )}>
+                            {selected && <div className="w-2 h-2 bg-white rounded-sm" />}
+                          </div>
+                          <span className="text-sm font-medium text-gray-900">{item.name.replace('Acompanhamento - ', '')}</span>
+                          {!selected && <span className="ml-auto text-[10px] text-gray-400 uppercase">removido</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* ── Adicionais ── */}
                 {modalAdicionais.length > 0 && (
