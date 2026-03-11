@@ -1,11 +1,23 @@
 "use client";
 import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import Link from "next/link";
+
+declare global { interface Window { fbq?: (...args: unknown[]) => void } }
 
 function SucessoContent() {
   const params = useSearchParams();
   const orderId = params.get("order_id");
+  const total = params.get("total");
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.fbq) {
+      window.fbq("track", "Purchase", {
+        value: total ? parseFloat(total) : 0,
+        currency: "BRL",
+      });
+    }
+  }, [total]);
   return (
     <div className="min-h-screen bg-amber-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-md p-8 max-w-sm w-full text-center space-y-4">
