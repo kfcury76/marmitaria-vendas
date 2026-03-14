@@ -16,7 +16,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Senha invalida' }, { status: 401 });
     }
     const [itemsRes, deliveryRes] = await Promise.all([
-        supabaseAdmin.from('menu_items').select(`id, name, base_price, sort_order, category:category_id(name), groups:menu_groups(id, title, sort_order, options:menu_additions(id, name, price, sort_order))`).eq('is_active', true).order('sort_order', { ascending: true }),
+        supabaseAdmin.from('menu_items').select(`id, name, base_price, is_active, sort_order, category:category_id(name), groups:menu_groups(id, title, sort_order, options:menu_additions(id, name, price, sort_order))`).order('sort_order', { ascending: true }),
         supabaseAdmin.from('delivery_config').select('*').order('id'),
     ]);
     if (itemsRes.error) {
@@ -31,10 +31,32 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: 'Senha invalida' }, { status: 401 });
     }
     const body = await request.json();
-    const { table, id, price } = body as { table: string; id: string | number; price: number };
-    if (!table || id === undefined || price === undefined) {
+    const { table, id, price, is_active } = body as { table: string; id: string | number; price?: number; is_active?: boolean };
+
+    if (!table || id === undefined) {
         return NextResponse.json({ error: 'Parametros invalidos' }, { status: 400 });
     }
+
+    // Se está atualizando is_active
+    if (is_active !== undefined) {
+        let error: any = null;
+        if (table === 'menu_items') {
+            ({ error } = await supabaseAdmin.from('menu_items').update({ is_active }).eq('id', id));
+        } else {
+            return NextResponse.json({ error: 'Toggle is_active só disponível para menu_items' }, { status: 400 });
+        }
+        if (error) {
+            console.error(`Erro ao atualizar is_active em ${table}:`, error);
+            return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        return NextResponse.json({ success: true });
+    }
+
+    // Se está atualizando preço
+    if (price === undefined) {
+        return NextResponse.json({ error: 'Preco ou is_active obrigatorio' }, { status: 400 });
+    }
+
     const numericPrice = Number(price);
     if (isNaN(numericPrice) || numericPrice < 0) {
         return NextResponse.json({ error: 'Preco invalido' }, { status: 400 });

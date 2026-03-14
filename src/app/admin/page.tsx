@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 
 type Addition = { id: string; name: string; price: number; sort_order: number };
 type Group = { id: string; title: string; sort_order: number; options: Addition[] };
-type MenuItem = { id: string; name: string; base_price: number; sort_order: number; category: { name: string } | null; groups: Group[] };
+type MenuItem = { id: string; name: string; base_price: number; is_active: boolean; sort_order: number; category: { name: string } | null; groups: Group[] };
 type DeliveryRow = { id: string; label: string; fee: number };
 type AdminData = { items: MenuItem[]; delivery: DeliveryRow[] };
 
@@ -17,9 +17,66 @@ async function apiGet(password: string): Promise<AdminData> {
     return res.json();
 }
 
-async function apiPatch(password: string, table: string, id: string | number, price: number) {
-    const res = await fetch("/api/admin/prices", { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${password}` }, body: JSON.stringify({ table, id, price }) });
+async function apiPatch(password: string, table: string, id: string | number, price?: number, is_active?: boolean) {
+    const body: any = { table, id };
+    if (price !== undefined) body.price = price;
+    if (is_active !== undefined) body.is_active = is_active;
+    const res = await fetch("/api/admin/prices", { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${password}` }, body: JSON.stringify(body) });
     if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error ?? "Erro ao salvar"); }
+}
+
+function ProductRow({ label, sublabel, currentPrice, isActive, table, id, password, onSaved, onToggled }: { label: string; sublabel?: string; currentPrice: number; isActive?: boolean; table: string; id: string | number; password: string; onSaved: (table: string, id: string | number, newPrice: number) => void; onToggled?: (table: string, id: string | number, newActive: boolean) => void }) {
+    const [draft, setDraft] = useState(String(currentPrice.toFixed(2)));
+    const [saving, setSaving] = useState(false);
+    const [toggling, setToggling] = useState(false);
+    const [feedback, setFeedback] = useState<"ok" | "err" | null>(null);
+    const isDirty = Number(draft.replace(",", ".")) !== currentPrice;
+
+    async function save() {
+        const parsed = Number(draft.replace(",", "."));
+        if (isNaN(parsed) || parsed < 0) { setFeedback("err"); setTimeout(() => setFeedback(null), 1500); return; }
+        setSaving(true);
+        try { await apiPatch(password, table, id, parsed); onSaved(table, id, parsed); setFeedback("ok"); }
+        catch { setFeedback("err"); }
+        finally { setSaving(false); setTimeout(() => setFeedback(null), 2000); }
+    }
+
+    async function toggleActive() {
+        if (isActive === undefined || !onToggled) return;
+        setToggling(true);
+        try { await apiPatch(password, table, id, undefined, !isActive); onToggled(table, id, !isActive); }
+        catch { setFeedback("err"); setTimeout(() => setFeedback(null), 1500); }
+        finally { setToggling(false); }
+    }
+
+    return (
+        <div className={`flex items-center justify-between py-3 border-b border-amber-100 last:border-0 gap-4 ${isActive === false ? 'opacity-40' : ''}`}>
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+                {isActive !== undefined && (
+                    <button
+                        onClick={toggleActive}
+                        disabled={toggling}
+                        className={`shrink-0 w-11 h-6 rounded-full transition-all duration-200 relative ${isActive ? 'bg-green-500' : 'bg-stone-300'}`}
+                        title={isActive ? "Desativar produto" : "Ativar produto"}
+                    >
+                        <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all duration-200 ${isActive ? 'left-[22px]' : 'left-0.5'}`} />
+                    </button>
+                )}
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-stone-800 truncate">{label}</p>
+                    {sublabel && <p className="text-xs text-stone-400 mt-0.5 truncate">{sublabel}</p>}
+                </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs text-stone-400 font-mono">R$</span>
+                <input type="number" step="0.01" min="0" value={draft} onChange={(e) => setDraft(e.target.value)} onFocus={(e) => e.target.select()} className="w-24 text-right text-sm font-mono border border-amber-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+                <button onClick={save} disabled={saving || !isDirty}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 min-w-[56px] ${feedback === "ok" ? "bg-green-500 text-white" : feedback === "err" ? "bg-red-500 text-white" : isDirty ? "bg-amber-500 hover:bg-amber-600 text-white shadow-sm" : "bg-stone-100 text-stone-300 cursor-not-allowed"}`}>
+                    {saving ? "..." : feedback === "ok" ? "Salvo!" : feedback === "err" ? "Erro" : "Salvar"}
+                </button>
+            </div>
+        </div>
+    );
 }
 
 function PriceRow({ label, sublabel, currentPrice, table, id, password, onSaved }: { label: string; sublabel?: string; currentPrice: number; table: string; id: string | number; password: string; onSaved: (table: string, id: string | number, newPrice: number) => void }) {
@@ -66,12 +123,12 @@ function AdditionsSection({ item, password, onSaved }: { item: MenuItem; passwor
     );
 }
 
-function ItemsTab({ items, category, password, onSaved }: { items: MenuItem[]; category: string; password: string; onSaved: (table: string, id: string | number, newPrice: number) => void }) {
+function ItemsTab({ items, category, password, onSaved, onToggled }: { items: MenuItem[]; category: string; password: string; onSaved: (table: string, id: string | number, newPrice: number) => void; onToggled: (table: string, id: string | number, newActive: boolean) => void }) {
     const filtered = items.filter((i) => i.category?.name?.toLowerCase() === category.toLowerCase());
     if (filtered.length === 0) return <p className="text-stone-400 text-sm mt-6 text-center">Nenhum item encontrado.</p>;
     return (
         <div className="bg-white rounded-2xl px-4 shadow-sm border border-amber-100">
-            {filtered.map((item) => <PriceRow key={item.id} label={item.name} currentPrice={item.base_price} table="menu_items" id={item.id} password={password} onSaved={onSaved} />)}
+            {filtered.map((item) => <ProductRow key={item.id} label={item.name} currentPrice={item.base_price} isActive={item.is_active} table="menu_items" id={item.id} password={password} onSaved={onSaved} onToggled={onToggled} />)}
         </div>
     );
 }
@@ -145,6 +202,11 @@ export default function AdminPage() {
         }
     }, [data]);
 
+    const handleToggled = useCallback((table: string, id: string | number, newActive: boolean) => {
+        if (!data || table !== "menu_items") return;
+        setData((prev) => prev ? { ...prev, items: prev.items.map((i) => i.id === id ? { ...i, is_active: newActive } : i) } : prev);
+    }, [data]);
+
     if (!data) return <LoginScreen onLogin={login} />;
 
     const tabs: { key: Tab; label: string }[] = [
@@ -174,8 +236,8 @@ export default function AdminPage() {
                 </div>
             </div>
             <main className="max-w-2xl mx-auto px-4 py-6">
-                {activeTab === "marmitas" && <ItemsTab items={data.items} category="Marmitas" password={password} onSaved={handleSaved} />}
-                {activeTab === "bebidas" && <ItemsTab items={data.items} category="Bebidas" password={password} onSaved={handleSaved} />}
+                {activeTab === "marmitas" && <ItemsTab items={data.items} category="Marmitas" password={password} onSaved={handleSaved} onToggled={handleToggled} />}
+                {activeTab === "bebidas" && <ItemsTab items={data.items} category="Bebidas" password={password} onSaved={handleSaved} onToggled={handleToggled} />}
                 {activeTab === "adicionais" && <AdditionalsTab items={data.items} password={password} onSaved={handleSaved} />}
                 {activeTab === "frete" && <FreteTab delivery={data.delivery} password={password} onSaved={handleSaved} />}
             </main>
