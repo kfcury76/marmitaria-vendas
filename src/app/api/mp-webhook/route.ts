@@ -1,10 +1,45 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
+import { rateLimit, rateLimitResponse } from '@/lib/ratelimit';
+
+function validateMPSignature(request: Request, body: any): boolean {
+  const xSignature = request.headers.get('x-signature');
+  const xRequestId = request.headers.get('x-request-id');
+
+  if (!xSignature || !xRequestId) return false;
+
+  const parts = xSignature.split(',');
+  const ts = parts.find(p => p.trimStart().startsWith('ts='))?.split('=')[1];
+  const hash = parts.find(p => p.trimStart().startsWith('v1='))?.split('=')[1];
+
+  if (!ts || !hash) return false;
+
+  const secret = process.env.MP_WEBHOOK_SECRET;
+  if (!secret) {
+    console.warn('[MP-WEBHOOK] MP_WEBHOOK_SECRET not configured, skipping signature validation');
+    return true;
+  }
+
+  const manifest = `id:${body?.data?.id};request-id:${xRequestId};ts:${ts};`;
+  const hmac = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
+
+  return hmac === hash;
+}
 
 export async function POST(request: Request) {
   try {
+    const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
+    const { success } = rateLimit(`mp-webhook:${ip}`, 30, 60 * 1000);
+    if (!success) return rateLimitResponse();
+
     const body = await request.json();
+
+    if (!validateMPSignature(request, body)) {
+      console.warn('[MP-WEBHOOK] Invalid signature - possible attack');
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+    }
 
     // MP sends: { action: "payment.created"|"payment.updated", data: { id: "payment_id" } }
     const paymentId = body?.data?.id;

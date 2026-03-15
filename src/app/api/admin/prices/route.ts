@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { rateLimit, rateLimitResponse } from '@/lib/ratelimit';
 
 function checkAuth(request: Request): boolean {
     const adminPassword = process.env.ADMIN_PASSWORD;
@@ -12,6 +13,10 @@ function checkAuth(request: Request): boolean {
 }
 
 export async function GET(request: Request) {
+    const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
+    const { success: rlOk } = rateLimit(`admin:${ip}`, 5, 15 * 60 * 1000);
+    if (!rlOk) return rateLimitResponse();
+
     if (!checkAuth(request)) {
         return NextResponse.json({ error: 'Senha invalida' }, { status: 401 });
     }
@@ -27,6 +32,10 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+    const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
+    const { success: rlOk } = rateLimit(`admin-patch:${ip}`, 5, 15 * 60 * 1000);
+    if (!rlOk) return rateLimitResponse();
+
     if (!checkAuth(request)) {
         return NextResponse.json({ error: 'Senha invalida' }, { status: 401 });
     }

@@ -3,18 +3,31 @@ export const revalidate = 0;
 import { NextResponse } from 'next/server';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import { supabaseAdmin as supabase } from '@/lib/supabase-admin';
+import { rateLimit, rateLimitResponse } from '@/lib/ratelimit';
+import { checkoutSchema } from '@/lib/validations';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { cart, customerInfo } = body;
+    const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
+    const { success: rlOk } = rateLimit(`checkout:${ip}`, 3, 5 * 60 * 1000);
+    if (!rlOk) return rateLimitResponse();
 
-    if (!Array.isArray(cart) || cart.length === 0) {
-      return NextResponse.json({ success: false, error: 'Carrinho vazio' }, { status: 400 });
+    const origin = request.headers.get('origin');
+    const allowedOrigins = ['https://marmitariaararas.com.br', 'https://www.marmitariaararas.com.br'];
+    if (origin && !allowedOrigins.includes(origin) && process.env.NODE_ENV === 'production') {
+      return NextResponse.json({ error: 'Origin not allowed' }, { status: 403 });
     }
-    if (!customerInfo?.nome?.trim() || !customerInfo?.telefone?.trim()) {
-      return NextResponse.json({ success: false, error: 'Nome e telefone sao obrigatorios' }, { status: 400 });
+
+    const body = await request.json();
+
+    const parseResult = checkoutSchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json(
+        { success: false, error: 'Dados inválidos', details: parseResult.error.issues },
+        { status: 400 }
+      );
     }
+    const { cart, customerInfo } = parseResult.data;
 
     const menuItemIds: string[] = [...new Set(cart.map((c: any) => c.menuItem?.id).filter(Boolean))];
     const additionIds: string[] = [
